@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+    <style type="text/css">
+        body {
+            font: 10px sans-serif;
+            overflow: hidden;
+        }
+        
+        path.arc {
+            cursor: move;
+            fill: #fff;
+        }
+        
+        .node {
+            font-size: 10px;
+        }
+        
+        .link {
+            fill: none;
+            stroke: #00aa00;
+            stroke-opacity: .4;
+            pointer-events: none;
+        }
+        
+        .link-hide {
+            stroke-opacity: 0;
+        }
+        
+        .node-hide {
+            fill: #ccc;
+        }
+        
+        .link.source,
+        .link.target {
+            stroke-opacity: 1;
+        }
+        
+        .node.target {
+            fill: #ff0000 !important;
+        }
+        
+        .link.source {
+            stroke: #ff0000;
+        }
+        
+        .node.source {
+            fill: #0000aa;
+        }
+        
+        .link.target {
+            stroke: #0000aa;
+        }
+    </style>
+</head>
+
+<body>
+    <div id='chart'></div>
+
+    <div style="padding: 5px;">
+        <div style="padding: 5px;">
+            Old Name: <input id="temp_name" type="text" name="temp_name" readonly> New Name: <input id="node_name" type="text" name="node_name">
+            <input id="editBtn" value="Edit" type="button" />
+            <input id="deleBtn" value="Delete" type="button" />
+        </div>
+        <form id="uploadimage" action="" method="post" enctype="multipart/form-data" style="padding: 5px;">
+            <div id="selectImage">
+                Node Image: <input type="file" name="fileToUpload" id="fileToUpload" required style="width: 90px;" />
+                <input id="image_name" type="text" name="image_name" placeholder="Image Name" readonly>
+                <input type="submit" value="Upload" class="submit" />
+            </div>
+        </form>
+
+    </div>
+    <script src="//d3js.org/d3.v3.min.js"></script>
+    <script type="text/javascript" src="//cdnjs.cloudflare.com/ajax/libs/jquery/3.0.0-alpha1/jquery.min.js"></script>
+
+    <script type="text/javascript">
+        var ww = window.innerWidth,
+            hw = window.innerHeight,
+            w = ww / 2,
+            h = hw / 2,
+            rx = w / 2,
+            ry = h / 2,
+            m0,
+            rotate = 0;
+
+        var splines = [];
+        var totalData = null;
+        var filterValue = 0.90;
+        var nodes = [],
+            links = [];
+
+        var positiveColor = "#0000ff";
+        var negativeColor = "#ff0000";
+
+        var delay = 1000;
+        var lastModifiedDate = 0,
+            freeze = false;
+        var minSize = 240;
+        var tension = 0.85;
+
+        var dx = Math.max(Math.min(rx, ry), minSize);
+
+        var bundle = d3.layout.bundle();
+
+        var line = d3.svg.line.radial()
+            .interpolate("bundle")
+            .tension(tension)
+            .radius(function(d) {
+                return d.y;
+            })
+            .angle(function(d) {
+                return d.x / 180 * Math.PI;
+            });
+
+        var svg = d3.select("#chart").append("svg:svg")
+            .attr("width", w + "px")
+            .attr("height", h + "px")
+            .append("svg:g")
+            .classed("context", true)
+            .attr("transform", "translate(" + w / 2 + "," + h / 2 + ")");
+
+
+        svg.append("svg:path")
+            .attr("class", "arc")
+            .attr("d", d3.svg.arc().outerRadius(dx - 120).innerRadius(0).startAngle(0).endAngle(2 * Math.PI));
+
+        function imageExists(image_url) {
+
+            var http = new XMLHttpRequest();
+
+            http.open('HEAD', image_url, false);
+            http.send();
+
+            return http.status != 404;
+
+        }
+
+        function updateGraph(data, filter, radius) {
+
+            var cluster = d3.layout.cluster()
+                .size([360, radius - 120])
+                .sort(function(a, b) {
+                    return d3.ascending(a.key, b.key);
+                });
+
+            var root = {
+                children: []
+            };
+
+            var real_data = [];
+            for (var i = 0; i < data.length; i++) {
+                if (data[i].source == null || typeof data[i].source == undefined || data[i].source == "") continue;
+
+                real_data.push(data[i]);
+            }
+
+            var links = [];
+            var nodes_temp = [];
+            for (var i = 0; i < real_data.length; i++) {
+                if (nodes_temp.indexOf(real_data[i].source) === -1) {
+                    var node = {
+                        name: real_data[i].source,
+                        icon: 'img/' + real_data[i].source + ".png",
+                        parent: root,
+                        key: real_data[i].target.replace(/[&., ()]/g, "-"),
+                        children: [],
+                        fields: []
+                    };
+                    root.children.push(node);
+                    nodes_temp.push(real_data[i].source);
+                }
+
+                if (nodes_temp.indexOf(real_data[i].target) === -1) {
+                    var node = {
+                        name: real_data[i].target,
+                        icon: 'img/' + real_data[i].target + ".png",
+                        parent: root,
+                        key: real_data[i].target.replace(/[&., ()]/g, "-"),
+                        children: [],
+                        fields: []
+                    };
+                    root.children.push(node);
+                    nodes_temp.push(real_data[i].target);
+                }
+
+                link = {
+                    "source": nodes_temp.indexOf(real_data[i].source),
+                    "target": nodes_temp.indexOf(real_data[i].target),
+                    "value": real_data[i].link
+                };
+                links.push(link);
+            }
+
+
+            nodes = cluster.nodes(root);
+
+            links = [];
+            for (var i = 0; i < real_data.length; i++) {
+                var link = {}
+                for (var j = 0; j < nodes.length; j++) {
+
+                    if (real_data[i].source == nodes[j].name) {
+                        link.source = nodes[j];
+                    }
+                    if (real_data[i].target == nodes[j].name) {
+                        link.target = nodes[j];
+                    }
+                }
+                link.label = real_data[i].link;
+                links.push(link);
+            }
+
+            splines = bundle(links);
+
+            var path = svg.selectAll("path.link")
+                .data(links);
+
+            path.enter().insert("svg:path");
+
+            path.transition()
+                .duration(500)
+                .attr("class", function(d) {
+                    return "link source-" + d.source.name + " target-" + d.target.name;
+                })
+                .attr("id", function(d) {
+                    return d.source.name + "_" + d.target.name;
+                })
+                .attr("node-from", function(d) {
+                    return d.source.name
+                })
+                .attr("node-to", function(d) {
+                    return d.target.name
+                })
+                .style("stroke-width", function(d) {
+                    return Math.sqrt(d.value * 5);
+                })
+                .style("stroke", function(d) {
+                    return (d.value < 0) ? negativeColor : positiveColor
+                })
+                .attr("d", function(d, i) {
+                    return line(splines[i]);
+                });
+
+            svg.selectAll("text")
+                .data(links)
+                .enter()
+                .insert("text")
+                .append("textPath")
+                .attr("xlink:href", function(d, i) {
+                    return "#" + d.source.name + "_" + d.target.name;
+                })
+                .style("text-anchor", "middle") //place the text halfway on the arc
+                .attr("startOffset", "50%")
+                .text(function(d, i) {
+                    return d.label;
+                });
+
+            path.exit().remove();
+
+            var node = svg.selectAll("g.node")
+                .data(nodes.filter(function(n) {
+                    return !n.children;
+                }));
+
+            node.enter().insert("svg:g")
+                .on("click", mouseclick);
+
+
+            node.transition()
+                .duration(500)
+                .attr("class", "node")
+                .attr("id", function(d) {
+                    return "node-" + d.key;
+                })
+                .attr("transform", function(d) {
+                    return "rotate(" + (d.x - 90) + ")translate(" + d.y + ")";
+                });
+
+            node.exit().remove();
+
+            var nodeImage = node.selectAll("image")
+                .data(function(d) {
+                    return [d];
+                });
+
+            nodeImage.enter().insert("svg:image")
+                .attr("xlink:href", function(d) {
+                    var url = window.location.href;
+                    date = new Date();
+                    url = url.substring(0, url.lastIndexOf("/") + 1);
+                    if (imageExists(url + 'img/' + d.name + ".png?" + date.getTime())) {
+                        return url + 'img/' + d.name + ".png?" + date.getTime();
+                    } else if (imageExists(url + 'img/' + d.name + ".jpg?" + date.getTime())) {
+                        return url + 'img/' + d.name + ".jpg?" + date.getTime();
+                    } else {
+                        return url + 'img/' + d.name + ".jpeg?" + date.getTime();
+                    }
+
+                })
+                .attr("x", -12)
+                .attr("y", -12)
+                .attr("width", 24)
+                .attr("height", 24);
+
+            nodeImage.exit().remove();
+
+            var nodeText = node.selectAll("text")
+                .data(function(d) {
+                    return [d];
+                });
+
+            nodeText.enter().insert("svg:text")
+                .attr("dx", function(d) {
+                    return d.x < 180 ? 8 : -8;
+                })
+                .attr("dy", ".31em")
+                .attr("text-anchor", function(d) {
+                    return d.x < 180 ? "start" : "end";
+                })
+                .attr("transform", function(d) {
+                    return d.x < 180 ? null : "rotate(180)";
+                })
+                .text(function(d) {
+                    return d.name;
+                });
+
+            nodeText.exit().remove();
+
+        }
+
+        function loadData() {
+            d3.csv("data.csv?" + $.now(), function(data) {
+                totalData = data;
+                updateGraph(totalData, filterValue, dx);
+            });
+        }
+
+        function mouseclick(d) {
+            $('#node_name').val(d.name);
+            $('#image_name').val(d.name);
+            $('#temp_name').val(d.name);
+        }
+
+        function updateNodes(name, value) {
+            return function(d) {
+                if (value) this.parentNode.appendChild(this);
+                svg.select("#node-" + d[name].key).classed(d[name].key, value);
+            };
+        }
+
+        function cross(a, b) {
+            return a[0] * b[1] - a[1] * b[0];
+        }
+
+        function dot(a, b) {
+            return a[0] * b[0] + a[1] * b[1];
+        }
+
+        loadData();
+
+        $('#deleBtn').click(function() {
+            var old_name = $('#temp_name').val();
+            var node_name = $('#node_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.post("edit.php", {
+                    old_name: old_name,
+                    node_name: node_name,
+                    type: "delete"
+                }, function(result) {
+                    d3.select("svg").selectAll("path.link").remove();
+                    d3.select("svg").selectAll("g.node").remove();
+                    setTimeout(loadData(), 500);
+                    $('#node_name').val('');
+                    $('#temp_name').val('');
+                });
+            }
+        });
+        $('#editBtn').click(function() {
+            var old_name = $('#temp_name').val();
+            var node_name = $('#node_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.post("edit.php", {
+                    old_name: old_name,
+                    node_name: node_name,
+                    type: "edit"
+                }, function(result) {
+                    d3.select("svg").selectAll("path.link").remove();
+                    d3.select("svg").selectAll("g.node").remove();
+                    setTimeout(loadData(), 500);
+                    $('#node_name').val('');
+                    $('#temp_name').val('');
+                });
+            }
+        });
+        $("#uploadimage").on('submit', (function(e) {
+            e.preventDefault();
+            var old_name = $('#temp_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.ajax({
+                    url: "fileupload.php",
+                    type: "POST",
+                    data: new FormData(this),
+                    contentType: false,
+                    cache: false,
+                    processData: false,
+                    success: function(data) {
+                        if (data == 'OK') {
+                            d3.select("svg").selectAll("path.link").remove();
+                            d3.select("svg").selectAll("g.node").remove();
+                            d3.select("svg").selectAll("image").remove();
+                            setTimeout(loadData(), 500);
+                            $('#temp_name').val();
+                            $('#image_name').val();
+                        }
+                    }
+                });
+            }
+        }));
+
+        // Function to preview image after validation
+        $(function() {
+            $("#fileToUpload").change(function() {
+                var file = this.files[0];
+                var imagefile = file.type;
+                var match = ["image/jpeg", "image/png", "image/jpg"];
+                if (!((imagefile == match[0]) || (imagefile == match[1]) || (imagefile == match[2]))) {
+                    alert("Please Select A valid Image File. Note! Only jpeg, jpg and png Images type allowed.");
+                    return false;
+                }
+            });
+        });
+    </script>
+</body>
+
+</html>

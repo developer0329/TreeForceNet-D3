@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+
+    <title>Collapsible Tree Example</title>
+
+    <style>
+        .link {
+            fill: none;
+            stroke-width: 2px;
+        }
+        
+        .node circle {
+            fill: #fff;
+            stroke: steelblue;
+            stroke-width: 1.5px;
+        }
+        
+        .node text {
+            font: 10px sans-serif;
+        }
+        
+        #loading {
+            display: none;
+            position: absolute;
+            top: 50px;
+            left: 850px;
+            font-size: 25px;
+        }
+    </style>
+
+</head>
+
+<body>
+    <div id='chart'></div>
+
+    <div style="padding: 5px;">
+        <div style="padding: 5px;">
+            Old Name: <input id="temp_name" type="text" name="temp_name" readonly> New Name: <input id="node_name" type="text" name="node_name">
+            <input id="editBtn" value="Edit" type="button" />
+            <input id="deleBtn" value="Delete" type="button" />
+        </div>
+        <form id="uploadimage" action="" method="post" enctype="multipart/form-data" style="padding: 5px;">
+            <div id="selectImage">
+                Node Image: <input type="file" name="fileToUpload" id="fileToUpload" required style="width: 90px;" />
+                <input id="image_name" type="text" name="image_name" placeholder="Image Name" readonly>
+                <input type="submit" value="Upload" class="submit" />
+            </div>
+        </form>
+    </div>
+    <!-- load the d3.js library -->
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    <script src="http://d3js.org/d3.v3.min.js"></script>
+
+    <script>
+        var width = 400,
+            height = 300;
+
+        var tree = d3.layout.tree()
+            .size([height, width - 160]);
+
+        var diagonal = d3.svg.diagonal()
+            .projection(function(d) {
+                return [d.y, d.x];
+            });
+
+        var svg = d3.select("#chart").append("svg")
+            .attr("width", width)
+            .attr("height", height)
+            .append("g")
+            .attr("transform", "translate(40,0)");
+
+        function imageExists(image_url) {
+
+            var http = new XMLHttpRequest();
+
+            http.open('HEAD', image_url, false);
+            http.send();
+
+            return http.status != 404;
+
+        }
+
+        function getData() {
+            d3.csv('data.csv?' + (new Date()).getTime(), function(error, data) {
+                var real_data = [];
+                for (var i = 0; i < data.length; i++) {
+                    if (data[i].source == null || typeof data[i].source == undefined || data[i].source == "") continue;
+
+                    real_data.push(data[i]);
+                }
+
+                var nodes = [];
+                var nodes_temp = [];
+                var sources = [];
+                var targets = [];
+                for (var i = 0; i < real_data.length; i++) {
+                    if (nodes_temp.indexOf(real_data[i].source) === -1) {
+                        var node = {
+                            name: real_data[i].source,
+                            link_label: "",
+                            icon: 'img/' + real_data[i].source + ".png",
+                        };
+                        nodes.push(node);
+                        nodes_temp.push(real_data[i].source);
+                    }
+                    if (sources.indexOf(real_data[i].source) === -1) {
+                        sources.push(real_data[i].source);
+                    }
+                    if (nodes_temp.indexOf(real_data[i].target) === -1) {
+                        var node = {
+                            name: real_data[i].target,
+                            link_label: "",
+                            icon: 'img/' + real_data[i].target + ".png",
+                        };
+                        nodes.push(node);
+                        nodes_temp.push(real_data[i].target);
+                    }
+                    if (targets.indexOf(real_data[i].target) === -1) {
+                        targets.push(real_data[i].target);
+                    }
+                }
+
+                var root = sources.filter(function(obj) {
+                    return targets.indexOf(obj) == -1;
+                });
+
+                for (var i = 0; i < nodes.length; i++) {
+                    var children = [];
+                    for (var j = 0; j < real_data.length; j++) {
+                        if (nodes[i].name !== real_data[j].source) continue;
+                        for (var k = 0; k < nodes.length; k++) {
+                            if (nodes[k].name !== real_data[j].target) continue;
+                            nodes[k].link_label = real_data[j].link;
+                            children.push(nodes[k]);
+                        }
+                    }
+                    nodes[i].children = children;
+                }
+
+                Array.prototype.clean = function() {
+                    for (var i = 0; i < this.length; i++) {
+                        if (this[i].name == null || this[i].name === undefined || this[i].name == "") {
+                            this.splice(i, 1);
+                            i--;
+                        }
+                    }
+                    return this;
+                };
+
+
+                nodes.clean();
+
+                var root = nodes[0],
+                    nodes_data = tree.nodes(root),
+                    links = tree.links(nodes_data);
+
+                var link = svg.selectAll(".link")
+                    .data(links)
+                    .enter()
+                    .append("g")
+                    .attr("class", "link");
+
+                link.append("path")
+                    .attr("fill", "none")
+                    .attr("stroke", "#ff8888")
+                    .attr("stroke-width", "1.5px")
+                    .attr("d", diagonal);
+
+                link.append("text")
+                    .attr("font-family", "Arial, Helvetica, sans-serif")
+                    .attr("fill", "Black")
+                    .style("font", "normal 12px Arial")
+                    .attr("transform", function(d) {
+                        return "translate(" +
+                            ((d.source.y + d.target.y) / 2) + "," +
+                            ((d.source.x + d.target.x) / 2) + ")";
+                    })
+                    .attr("dy", ".35em")
+                    .attr("text-anchor", "middle")
+                    .text(function(d) {
+                        return d.target.link_label;
+                    });
+
+                var node = svg.selectAll(".node")
+                    .data(nodes);
+
+                // Enter the nodes.
+                var nodeEnter = node.enter().append("g")
+                    .attr("class", "node")
+                    .attr("transform", function(d) {
+                        return "translate(" + d.y + "," + d.x + ")";
+                    });
+                // nodeEnter.append("circle")
+                //     .attr("r", 10);
+                nodeEnter.append("image")
+                    .attr("xlink:href", function(d) {
+                        var url = window.location.href;
+                        date = new Date();
+                        url = url.substring(0, url.lastIndexOf("/") + 1);
+                        if (imageExists(url + 'img/' + d.name + ".png?" + date.getTime())) {
+                            return url + 'img/' + d.name + ".png?" + date.getTime();
+                        } else if (imageExists(url + 'img/' + d.name + ".jpg?" + date.getTime())) {
+                            return url + 'img/' + d.name + ".jpg?" + date.getTime();
+                        } else {
+                            return url + 'img/' + d.name + ".jpeg?" + date.getTime();
+                        }
+                    })
+                    .attr("x", "-12px")
+                    .attr("y", "-12px")
+                    .attr("width", "24px")
+                    .attr("height", "24px")
+                    .attr("border-radius", "12px");
+
+                nodeEnter.append("text")
+                    .attr("x", function(d) {
+                        return d.children || d._children ?
+                            (15) * -1 : +15
+                    })
+                    .attr("dy", ".35em")
+                    .attr("text-anchor", function(d) {
+                        return d.children || d._children ? "end" : "start";
+                    })
+                    .text(function(d) {
+                        return d.name;
+                    })
+                    .style("fill-opacity", 1);
+
+                node.on("mousedown", function(d) {
+                    $('#node_name').val(d.name);
+                    $('#image_name').val(d.name);
+                    $('#temp_name').val(d.name);
+                });
+
+                svg.transition()
+                    .duration(300)
+            })
+        };
+
+        getData();
+
+        $('#deleBtn').click(function() {
+            var old_name = $('#temp_name').val();
+            var node_name = $('#node_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.post("edit.php", {
+                    old_name: old_name,
+                    node_name: node_name,
+                    type: "delete"
+                }, function(result) {
+                    d3.select("svg").selectAll(".link").remove();
+                    d3.select("svg").selectAll(".node").remove();
+                    setTimeout(getData(), 500);
+                    $('#node_name').val('');
+                    $('#temp_name').val('');
+                });
+            }
+        });
+        $('#editBtn').click(function() {
+            var old_name = $('#temp_name').val();
+            var node_name = $('#node_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.post("edit.php", {
+                    old_name: old_name,
+                    node_name: node_name,
+                    type: "edit"
+                }, function(result) {
+                    d3.select("svg").selectAll(".link").remove();
+                    d3.select("svg").selectAll(".node").remove();
+                    setTimeout(loadData(), 500);
+                    $('#node_name').val('');
+                    $('#temp_name').val('');
+                });
+            }
+        });
+        $("#uploadimage").on('submit', (function(e) {
+            e.preventDefault();
+            var old_name = $('#temp_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.ajax({
+                    url: "fileupload.php",
+                    type: "POST",
+                    data: new FormData(this),
+                    contentType: false,
+                    cache: false,
+                    processData: false,
+                    success: function(data) {
+                        if (data == 'OK') {
+                            d3.select("svg").selectAll(".link").remove();
+                            d3.select("svg").selectAll(".node").remove();
+                            setTimeout(getData(), 500);
+                            $('#image_name').val('');
+                            $('#temp_name').val('');
+                        }
+                    }
+                });
+            }
+        }));
+
+        // Function to preview image after validation
+        $(function() {
+            $("#fileToUpload").change(function() {
+                var file = this.files[0];
+                var imagefile = file.type;
+                var match = ["image/jpeg", "image/png", "image/jpg"];
+                if (!((imagefile == match[0]) || (imagefile == match[1]) || (imagefile == match[2]))) {
+                    alert("Please Select A valid Image File. Note! Only jpeg, jpg and png Images type allowed.");
+                    return false;
+                }
+            });
+        });
+    </script>
+
+</body>
+
+</html>

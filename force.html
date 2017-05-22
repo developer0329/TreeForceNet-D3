@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+    .link {
+        stroke: #ccc;
+    }
+    
+    .node text {
+        pointer-events: none;
+        font: 10px sans-serif;
+    }
+</style>
+
+<body>
+    <div id='chart'></div>
+
+    <div style="padding: 5px;">
+        <div style="padding: 5px;">
+            Old Name: <input id="temp_name" type="text" name="temp_name" readonly> New Name: <input id="node_name" type="text" name="node_name">
+            <input id="editBtn" value="Edit" type="button" />
+            <input id="deleBtn" value="Delete" type="button" />
+        </div>
+        <form id="uploadimage" action="" method="post" enctype="multipart/form-data" style="padding: 5px;">
+            <div id="selectImage">
+                Node Image: <input type="file" name="fileToUpload" id="fileToUpload" required style="width: 90px;" />
+                <input id="image_name" type="text" name="image_name" placeholder="Image Name" readonly>
+                <input type="submit" value="Upload" class="submit" />
+            </div>
+        </form>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.2.1.min.js"></script>
+    <script src="//d3js.org/d3.v3.min.js"></script>
+    <script>
+        var width = 500,
+            height = 300
+
+        var svg = d3.select("#chart").append("svg")
+            .attr("width", width)
+            .attr("height", height);
+
+        var force = d3.layout.force()
+            .gravity(0.05)
+            .distance(160)
+            .charge(-100)
+            .size([width, height]);
+
+        function imageExists(image_url) {
+
+            var http = new XMLHttpRequest();
+
+            http.open('HEAD', image_url, false);
+            http.send();
+
+            return http.status != 404;
+
+        }
+
+        function getData() {
+            d3.csv('data.csv?' + (new Date()).getTime(), function(error, data) {
+                if (error) throw error;
+                var real_data = [];
+                for (var i = 0; i < data.length; i++) {
+                    if (data[i].source == null || typeof data[i].source == undefined || data[i].source == "") continue;
+
+                    real_data.push(data[i]);
+                }
+
+                var nodes = [];
+                var links = [];
+                var nodes_temp = [];
+                for (var i = 0; i < real_data.length; i++) {
+                    if (nodes_temp.indexOf(real_data[i].source) === -1) {
+                        var node = {
+                            name: real_data[i].source,
+                            icon: 'img/' + real_data[i].source + ".png",
+                        };
+                        nodes.push(node);
+                        nodes_temp.push(real_data[i].source);
+                    }
+
+                    if (nodes_temp.indexOf(real_data[i].target) === -1) {
+                        var node = {
+                            name: real_data[i].target,
+                            icon: 'img/' + real_data[i].target + ".png",
+                        };
+                        nodes.push(node);
+                        nodes_temp.push(real_data[i].target);
+                    }
+
+                    link = {
+                        "source": nodes_temp.indexOf(real_data[i].source),
+                        "target": nodes_temp.indexOf(real_data[i].target),
+                        "value": real_data[i].link
+                    };
+                    links.push(link);
+                }
+
+                force
+                    .nodes(nodes)
+                    .links(links)
+                    .start();
+
+                var edges = svg.selectAll("line")
+                    .data(links)
+                    .enter().append("line")
+                    .attr("id", function(d, i) {
+                        return 'edge' + i
+                    })
+                    .attr("class", "link");
+
+                var edgepaths = svg.selectAll(".edgepath")
+                    .data(links)
+                    .enter()
+                    .append('path')
+                    .attr({
+                        'd': function(d) {
+                            return 'M ' + d.source.x + ' ' + d.source.y + ' L ' + d.target.x + ' ' + d.target.y
+                        },
+                        'class': 'edgepath',
+                        'fill-opacity': 0,
+                        'stroke-opacity': 0,
+                        'fill': 'blue',
+                        'stroke': 'red',
+                        'id': function(d, i) {
+                            return 'edgepath' + i
+                        }
+                    })
+                    .style("pointer-events", "none");
+
+                var edgelabels = svg.selectAll(".edgelabel")
+                    .data(links)
+                    .enter()
+                    .append('text')
+                    .style("pointer-events", "none")
+                    .attr({
+                        'class': 'edgelabel',
+                        'id': function(d, i) {
+                            return 'edgelabel' + i
+                        },
+                        'dx': 80,
+                        'dy': 0,
+                        'font-size': 10,
+                        'fill': '#aaa'
+                    });
+
+                edgelabels.append('textPath')
+                    .attr('xlink:href', function(d, i) {
+                        return '#edgepath' + i
+                    })
+                    .style("pointer-events", "none")
+                    .text(function(d) {
+                        return d.value;
+                    });
+
+                var node = svg.selectAll(".node")
+                    .data(nodes);
+
+                var nodeEnter = node.enter().append("g")
+                    .attr("class", "node")
+                    .call(force.drag);
+
+                nodeEnter.append("image")
+                    .attr("xlink:href", function(d) {
+                        var url = window.location.href;
+                        date = new Date();
+                        url = url.substring(0, url.lastIndexOf("/") + 1);
+                        if (imageExists(url + 'img/' + d.name + ".png?" + date.getTime())) {
+                            return url + 'img/' + d.name + ".png?" + date.getTime();
+                        } else if (imageExists(url + 'img/' + d.name + ".jpg?" + date.getTime())) {
+                            return url + 'img/' + d.name + ".jpg?" + date.getTime();
+                        } else {
+                            return url + 'img/' + d.name + ".jpeg?" + date.getTime();
+                        }
+                    })
+                    .attr("x", -12)
+                    .attr("y", -12)
+                    .attr("width", 24)
+                    .attr("height", 24);
+
+                nodeEnter.append("text")
+                    .attr("dx", 12)
+                    .attr("dy", ".35em")
+                    .text(function(d) {
+                        return d.name
+                    });
+
+                node.on("mousedown", function(d) {
+                    $('#node_name').val(d.name);
+                    $('#image_name').val(d.name);
+                    $('#temp_name').val(d.name);
+                });
+
+                force.on("tick", function() {
+                    edges.attr({
+                        "x1": function(d) {
+                            return d.source.x;
+                        },
+                        "y1": function(d) {
+                            return d.source.y;
+                        },
+                        "x2": function(d) {
+                            return d.target.x;
+                        },
+                        "y2": function(d) {
+                            return d.target.y;
+                        }
+                    });
+
+                    node.attr("transform", function(d) {
+                        return "translate(" + d.x + "," + d.y + ")";
+                    });
+
+                    edgepaths.attr('d', function(d) {
+                        var path = 'M ' + d.source.x + ' ' + d.source.y + ' L ' + d.target.x + ' ' + d.target.y;
+                        //console.log(d)
+                        return path
+                    });
+
+                    edgelabels.attr('transform', function(d, i) {
+                        if (d.target.x < d.source.x) {
+                            bbox = this.getBBox();
+                            rx = bbox.x + bbox.width / 2;
+                            ry = bbox.y + bbox.height / 2;
+                            return 'rotate(180 ' + rx + ' ' + ry + ')';
+                        } else {
+                            return 'rotate(0)';
+                        }
+                    });
+                });
+            });
+        }
+
+        getData();
+
+        $('#deleBtn').click(function() {
+            var old_name = $('#temp_name').val();
+            var node_name = $('#node_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.post("edit.php", {
+                    old_name: old_name,
+                    node_name: node_name,
+                    type: "delete"
+                }, function(result) {
+                    d3.select("svg").selectAll("*").remove();
+                    setTimeout(getData(), 500);
+                    $('#node_name').val('');
+                    $('#temp_name').val('');
+                });
+            }
+        });
+        $('#editBtn').click(function() {
+            var old_name = $('#temp_name').val();
+            var node_name = $('#node_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.post("edit.php", {
+                    old_name: old_name,
+                    node_name: node_name,
+                    type: "edit"
+                }, function(result) {
+                    d3.select("svg").selectAll("*").remove();
+                    setTimeout(loadData(), 500);
+                    $('#node_name').val('');
+                    $('#temp_name').val('');
+                });
+            }
+        });
+
+        $("#uploadimage").on('submit', (function(e) {
+            e.preventDefault();
+            var old_name = $('#temp_name').val();
+            if (old_name == "") {
+                alert("Please select node.");
+            } else {
+                $.ajax({
+                    url: "fileupload.php",
+                    type: "POST",
+                    data: new FormData(this),
+                    contentType: false,
+                    cache: false,
+                    processData: false,
+                    success: function(data) {
+                        if (data == 'OK') {
+                            d3.select("svg").selectAll("*").remove();
+                            setTimeout(getData(), 500);
+                            $('#new_name').val('');
+                            $('#image_name').val('');
+                        }
+                    }
+                });
+            }
+        }));
+
+        // Function to preview image after validation
+        $(function() {
+            $("#fileToUpload").change(function() {
+                var file = this.files[0];
+                var imagefile = file.type;
+                var match = ["image/jpeg", "image/png", "image/jpg"];
+                if (!((imagefile == match[0]) || (imagefile == match[1]) || (imagefile == match[2]))) {
+                    alert("Please Select A valid Image File. Note! Only jpeg, jpg and png Images type allowed.");
+                    return false;
+                }
+            });
+        });
+    </script>
